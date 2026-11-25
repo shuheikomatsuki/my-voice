@@ -1,0 +1,29 @@
+# 声のデータ・学習結果は絶対にコミットしない（容量・なりすまし対策）
+recordings/
+data/
+work/
+outputs/
+models/
+*.wav
+*.m4a
+*.mp3
+*.flac
+*.aac
+*.caf
+*.safetensors
+*.pt
+
+# 外部リポジトリ (scripts/setup_irodori.sh で取得)
+third_party/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+*.egg-info/
+dist/
+build/
+
+# OS
+.DS_Store

@@ -1,0 +1,103 @@
+# my-voice プロジェクト設定
+# 自分の声に合わせて caption などを編集してください。
+
+[speaker]
+# 学習データの speaker 列に入る ID（全データで固定）
+id = "me"
+
+# ---------------------------------------------------------------------------
+# 話し方（スタイル）ごとの caption。学習データの caption 列になり、
+# 推論時に --style で指定すると同じ caption が使われる。
+# 自分の声の特徴（性別・高さ・距離感など）を書き足すと効きやすい。
+# ---------------------------------------------------------------------------
+[styles.normal]
+caption = "落ち着いた普通の調子で、近い距離感で話す話者"
+
+[styles.happy]
+caption = "嬉しそうに弾んだ明るい声で話す話者"
+
+[styles.angry]
+caption = "怒って強い口調で話す話者"
+
+[styles.sad]
+caption = "悲しげに沈んだ小さめの声で話す話者"
+
+# ---------------------------------------------------------------------------
+# 録音フェーズ。corpus は ITA コーパスのサブセット (emotion / recitation)。
+# ---------------------------------------------------------------------------
+[[phases]]
+name = "phase1"
+corpus = "emotion"
+styles = ["normal"]
+
+[[phases]]
+name = "phase2"
+corpus = "recitation"
+styles = ["normal"]
+
+[[phases]]
+name = "phase3"
+corpus = "emotion"
+styles = ["happy", "angry", "sad"]
+
+[recording]
+# 1 つの録音ファイルで読む文数
+sentences_per_session = 25
+
+[split]
+# これ以上の無音を「文の区切り」とみなす（秒）。文間は 1.5〜2 秒空けて読むのが安全
+min_silence_sec = 0.9
+# これより短い発話区間は雑音として捨てる（秒）
+min_speech_sec = 0.35
+# 切り出した音声の前後に残す無音（秒）
+pad_sec = 0.15
+
+[qc]
+min_duration_sec = 0.5
+max_duration_sec = 20.0        # Irodori の既定 max_latent_steps (約30秒) より十分短く
+error_duration_sec = 30.0
+min_sample_rate = 44100
+min_snr_db = 15.0              # これ未満はエラー
+warn_snr_db = 25.0             # これ未満は警告
+min_level_dbfs = -40.0         # 発話部分の RMS がこれ未満はエラー（小さすぎ）
+warn_level_dbfs = -32.0
+clip_ratio_warn = 0.0001
+clip_ratio_error = 0.001
+edge_silence_warn_sec = 1.2
+mora_rate_min = 3.5            # モーラ/秒。外れたら台本とのずれを疑う
+mora_rate_max = 11.0
+asr_min_similarity = 0.55      # --asr 時、文字起こしと台本の一致度がこれ未満なら警告
+
+[irodori]
+repo = "https://github.com/Aratako/Irodori-TTS.git"
+# 再現性のためコミットを固定（引数の対応を確認したコミット: 2026-11-18）。空なら最新
+ref = "f01c08cd40c0afa62a862439a5de12f6dcf62054"
+base_model = "Aratako/Irodori-TTS-v4.1-Small"
+lora_config = "configs/train_v4_small_lora.yaml"
+valid_ratio = 0.05
+
+# 公式 LoRA 設定は大規模データ向け（batch 40 × 累積 2、30000 steps）。
+# 約 400 文（1 時間）向けに上書きする。キーは train.py の引数名（_ は - に変換）。
+# 400 文 / batch 16 ≒ 25 steps/epoch → 3000 steps ≒ 120 epoch。
+# 500 steps ごとに保存されるので `myvoice train samples` で聞き比べて選ぶ。
+# VRAM が足りなければ batch_size を 8 に下げるか、train run の後ろに -- --gradient-checkpointing。
+[irodori.train_overrides]
+batch_size = 16
+gradient_accumulation_steps = 1
+max_steps = 3000
+warmup_steps = 100
+stable_steps = 2400
+min_lr_scale = 0.1
+save_every = 500
+valid_every = 250
+checkpoint_best_n = 3
+num_workers = 4
+
+[infer]
+# 学習中のチェックポイント比較で読ませるテスト文
+test_sentences = [
+    "こんにちは。今日はいい天気ですね。",
+    "えっ、本当ですか？それはすごく嬉しいです！",
+    "明日の会議は午前十時から、第二会議室で行います。",
+    "ちょっと待って、まだ準備ができていないんだ。",
+]
