@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import csv
 import subprocess
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -11,7 +12,7 @@ from conftest import SR, recording, silence, voice
 from myvoice import qc
 from myvoice.align import align, normalize, similarity
 from myvoice.corpus import count_morae, get_session, parse_ita
-from myvoice.dataset import build
+from myvoice.dataset import build, pick_reference, pick_references
 from myvoice.project import Project
 from myvoice.segment import detect_chunks
 from myvoice.sessions import SplitMismatch, load_segments, split_recording
@@ -143,6 +144,16 @@ def test_split_and_build(project_root):
     info = sf.info(str(p.datasets_dir / "v1" / rows[0]["file_name"]))
     assert info.samplerate == SR and info.channels == 1
 
+    # 参照音声: S/N の良い順に、合計秒数に達するまで選ぶ
+    one = pick_references(p, "v1", total_sec=0.1, min_sec=0.5)
+    assert len(one) == 1
+    many = pick_references(p, "v1", total_sec=30.0, min_sec=0.5)
+    assert len(many) == 3 and len(set(many)) == 3
+    cfg = p.root / "configs" / "project.toml"
+    cfg.write_text(cfg.read_text(encoding="utf-8").replace('ref_exclude = [', 'ref_exclude = ["EMOTION100_001_normal", '), encoding="utf-8")
+    assert all(r.stem != "EMOTION100_001_normal" for r in pick_references(Project.load(), "v1", total_sec=30.0, min_sec=0.5))
+    assert pick_reference(p, "v1", min_sec=0.5) == pick_references(p, "v1", total_sec=0.1, min_sec=0.5)[0]
+
     # reject.txt で除外
     p.reject_file.write_text("EMOTION100_002_normal  # 噛んだ\n", encoding="utf-8")
     assert build(p, "v2", phases=["phase1"])["utterances"] == 2
@@ -184,7 +195,8 @@ def test_irodori_commands_dry_run(project_root, monkeypatch, capsys):
     irodori.train(p, "v1", "exp1", dry_run=True)
     out = capsys.readouterr().out
     assert "prepare_manifest.py" in out and "--speaker-id-prefix myvoice" in out
-    assert "--max-steps 3000" in out and "--batch-size 16" in out and "--init-checkpoint" in out
+    assert "--max-steps 1500" in out and "--batch-size 16" in out and "--init-checkpoint" in out
+    assert "--checkpoint-best-n 0" in out and "--valid-ratio 0.1" in out
 
     run = irodori.run_dir(p, "exp1")
     for name in ["checkpoint_0001000", "checkpoint_best_val_loss_0000500_1.234567", "checkpoint_final", "checkpoint_0000250"]:
@@ -197,3 +209,29 @@ def test_irodori_commands_dry_run(project_root, monkeypatch, capsys):
     irodori.infer(p, "テスト", run / "o.wav", adapter=run / "checkpoint_final", device="mps", dry_run=True)
     out = capsys.readouterr().out
     assert "--no-ref" in out and "--model-device mps" in out and "--lora-adapter" in out
+    assert "--hf-checkpoint" in out  # models/ にベースモデルが無ければ HF から
+
+    # 参照音声: 1 つなら --ref-wav、複数なら --ref-wavs。models/ にあればローカルの重みを使う
+    weights = irodori.local_base_model(p)
+    weights.parent.mkdir(parents=True)
+    weights.write_bytes(b"")
+    irodori.infer(p, "テスト", run / "o.wav", ref=[ds / "a.wav", ds / "b.wav"], dry_run=True)
+    out = capsys.readouterr().out
+    assert "--ref-wavs" in out and "a.wav" in out and "b.wav" in out and "--checkpoint" in out
+    assert "--hf-checkpoint" not in out
+    irodori.infer(p, "テスト", run / "o.wav", ref=ds / "a.wav", dry_run=True)
+    assert "--ref-wav " in capsys.readouterr().out
+
+
+def test_cli_passes_only_args_after_double_dash(project_root, monkeypatch):
+    """`train run v1 --run x --dry-run -- ...` で --run / --dry-run を train.py に流さない。"""
+    from myvoice import cli, irodori
+
+    seen = {}
+    monkeypatch.setattr(irodori, "train", lambda p, ds, run, resume=None, extra=None, dry_run=False: seen.update(ds=ds, run=run, extra=extra, dry_run=dry_run) or Path("."))
+    assert cli.main(["train", "run", "v1", "--run", "x", "--dry-run", "--", "--lora-r", "32"]) == 0
+    assert seen == {"ds": "v1", "run": "x", "extra": ["--lora-r", "32"], "dry_run": True}
+    assert cli.main(["train", "run", "v1", "--run", "y"]) == 0
+    assert seen["extra"] == [] and seen["dry_run"] is False
+    with pytest.raises(SystemExit):
+        cli.main(["status", "--", "--x"])

@@ -74,26 +74,40 @@ repo = "https://github.com/Aratako/Irodori-TTS.git"
 ref = "f01c08cd40c0afa62a862439a5de12f6dcf62054"
 base_model = "Aratako/Irodori-TTS-v4.1-Small"
 lora_config = "configs/train_v4_small_lora.yaml"
-valid_ratio = 0.05
+# 検証用に manifest から取り出す割合（学習には使われない）。100 文なら 10 文。
+# 検証 loss はランダムな t・ノイズで毎回計算され揺れが大きいので、発散の確認程度に使う。
+valid_ratio = 0.1
 
 # 公式 LoRA 設定は大規模データ向け（batch 40 × 累積 2、30000 steps）。
-# 約 400 文（1 時間）向けに上書きする。キーは train.py の引数名（_ は - に変換）。
-# 400 文 / batch 16 ≒ 25 steps/epoch → 3000 steps ≒ 120 epoch。
-# 500 steps ごとに保存されるので `myvoice train samples` で聞き比べて選ぶ。
+# キーは train.py の引数名（_ は - に変換）。データ量に合わせて steps を決める:
+#   v1（100 文 → 学習 90 文）: batch 16 で 5 steps/epoch → 1500 steps ≒ 300 epoch
+#   v2（約 420 文）にするときは steps/epoch が約 4 倍になるので max_steps を見直す
+# 250 steps ごとに保存し、`myvoice train samples` で聞き比べて選ぶ。
+# checkpoint_best_n は 0 にする: >0 だと「最新 1 つ + 検証 loss 上位 N 個」以外の
+# 途中チェックポイントが削除され、聞き比べができなくなる（train.py の仕様）。
 # VRAM が足りなければ batch_size を 8 に下げるか、train run の後ろに -- --gradient-checkpointing。
 [irodori.train_overrides]
 batch_size = 16
 gradient_accumulation_steps = 1
-max_steps = 3000
-warmup_steps = 100
-stable_steps = 2400
+max_steps = 1500
+warmup_steps = 50
+stable_steps = 1100
 min_lr_scale = 0.1
-save_every = 500
-valid_every = 250
-checkpoint_best_n = 3
+save_every = 250
+valid_every = 50
+log_every = 10
+checkpoint_best_n = 0
 num_workers = 4
 
 [infer]
+# --ref auto で選ぶ参照音声の合計秒数。学習時は同じ話者の別の文をつなげた 1〜120 秒を
+# 参照にしており、公式も「同じ話者の短い文を複数、合計 30 秒程度」を推奨している。
+ref_total_sec = 30.0
+# 参照音声に使わない utt_id（学習データには残す）。擬音・外来音の特殊な文は声の見本に向かない
+ref_exclude = [
+    "EMOTION100_079_normal", "EMOTION100_081_normal", "EMOTION100_093_normal",
+    "EMOTION100_095_normal", "EMOTION100_096_normal",
+]
 # 学習中のチェックポイント比較で読ませるテスト文
 test_sentences = [
     "こんにちは。今日はいい天気ですね。",

@@ -195,6 +195,32 @@ def cmd_irodori_setup(a) -> int:
     return 0
 
 
+def cmd_irodori_download(a) -> int:
+    from . import irodori
+
+    p = _p()
+    print(f"ベースモデル: {irodori.download_base_model(p)}")
+    irodori.download_codec(p)
+    return 0
+
+
+def _resolve_refs(p: Project, ref: list[str] | None, dataset: str | None, style: str, total_sec: float | None) -> list[Path]:
+    """--ref の値（auto / パス複数 / 空）を参照音声のリストにする。"""
+    import soundfile as sf
+
+    from .dataset import pick_references
+
+    vals = [r for r in (ref or []) if r]
+    if vals == ["auto"]:
+        if not dataset:
+            raise SystemExit("--ref auto には --dataset が必要です")
+        refs = pick_references(p, dataset, style, total_sec=total_sec)
+        total = sum(sf.info(str(r)).duration for r in refs)
+        print(f"参照音声: {len(refs)} 文・合計 {total:.1f} 秒（{', '.join(r.stem for r in refs)}）")
+        return refs
+    return [Path(r) for r in vals]
+
+
 def cmd_train_prepare(a) -> int:
     from . import irodori
 
@@ -214,7 +240,6 @@ def cmd_train_run(a) -> int:
 def cmd_train_samples(a) -> int:
     """各チェックポイントでテスト文を合成し、聞き比べ用に並べる。"""
     from . import irodori
-    from .dataset import pick_reference
 
     p = _p()
     cks = irodori.checkpoints(p, a.run)
@@ -224,10 +249,8 @@ def cmd_train_samples(a) -> int:
     if a.only:
         cks = [c for c in cks if c.name in a.only.split(",")]
     sentences = a.text or p.section("infer").get("test_sentences", ["こんにちは。"])
-    ref = Path(a.ref) if a.ref and a.ref != "auto" else None
-    if a.ref == "auto":
-        ref = pick_reference(p, a.dataset or _run_dataset(p, a.run), a.style)
-        print(f"参照音声: {ref}")
+    dataset = a.dataset or (_run_dataset(p, a.run) if a.ref == ["auto"] else None)
+    ref = _resolve_refs(p, a.ref, dataset, a.style, a.ref_seconds)
     caption = p.caption_for(a.style) if not a.no_caption else None
     t = qc.thresholds(p.section("qc"))
     outdir = irodori.run_dir(p, a.run) / "samples"
@@ -257,7 +280,6 @@ def _run_dataset(p: Project, run_name: str) -> str:
 
 def cmd_infer(a) -> int:
     from . import irodori
-    from .dataset import pick_reference
 
     p = _p()
     texts = list(a.text or [])
@@ -267,15 +289,10 @@ def cmd_infer(a) -> int:
         print("--text か --text-file を指定してください", file=sys.stderr)
         return 2
     adapter = irodori.resolve_adapter(p, a.adapter) if a.adapter else None
-    ref = None
-    if a.ref == "auto":
-        if not a.dataset:
-            print("--ref auto には --dataset が必要です", file=sys.stderr)
-            return 2
-        ref = pick_reference(p, a.dataset, a.style)
-        print(f"参照音声: {ref}")
-    elif a.ref:
-        ref = Path(a.ref)
+    if a.ref == ["auto"] and not a.dataset:
+        print("--ref auto には --dataset が必要です", file=sys.stderr)
+        return 2
+    ref = _resolve_refs(p, a.ref, a.dataset, a.style, a.ref_seconds)
     caption = a.caption or (p.caption_for(a.style) if a.style and not a.no_caption else None)
     t = qc.thresholds(p.section("qc"))
     out = Path(a.out)
@@ -347,6 +364,8 @@ def build_parser() -> argparse.ArgumentParser:
     x.add_argument("--backend", choices=["cu128", "cpu", "rocm", "xpu"], help="既定: Mac=cpu(MPS可), NVIDIA=cu128")
     x.add_argument("--update", action="store_true", help="git pull して更新")
     x.set_defaults(func=cmd_irodori_setup)
+    x = ss.add_parser("download", help="ベースモデル（models/）と DACVAE codec（HF キャッシュ）を取得")
+    x.set_defaults(func=cmd_irodori_download)
 
     s = sub.add_parser("train", help="LoRA 学習（GPU サーバー）")
     ss = s.add_subparsers(dest="sub", required=True)
@@ -361,13 +380,13 @@ def build_parser() -> argparse.ArgumentParser:
     x.add_argument("--run", help="実験名（既定: データセット名）。outputs/runs/<run>/ に保存")
     x.add_argument("--resume", help="再開するチェックポイントのパス")
     x.add_argument("--dry-run", action="store_true")
-    x.add_argument("extra", nargs=argparse.REMAINDER)
-    x.set_defaults(func=cmd_train_run)
+    x.set_defaults(func=cmd_train_run, accepts_extra=True)
 
     x = ss.add_parser("samples", help="各チェックポイントでテスト文を合成して聞き比べ")
     x.add_argument("run")
     x.add_argument("--dataset", help="--ref auto 用（既定: run 作成時のデータセット）")
-    x.add_argument("--ref", default="auto", help="参照音声（auto=データセットから自動選択 / パス / 空文字で参照なし）")
+    x.add_argument("--ref", nargs="+", default=["auto"], help="参照音声（auto=データセットから複数自動選択 / パス（複数可）/ 空文字で参照なし）")
+    x.add_argument("--ref-seconds", type=float, help="--ref auto で選ぶ合計秒数（既定: [infer] ref_total_sec）")
     x.add_argument("--style", default="normal")
     x.add_argument("--no-caption", action="store_true")
     x.add_argument("--text", action="append", help="テスト文（複数可。既定は project.toml）")
@@ -382,7 +401,8 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--text", action="append")
     s.add_argument("--text-file", help="1 行 1 文のテキストファイル")
     s.add_argument("--adapter", help="LoRA: パス / run 名（最新チェックポイント）/ run名/checkpoint名")
-    s.add_argument("--ref", help="参照音声のパス、または auto（--dataset から自動選択）。省略で参照なし")
+    s.add_argument("--ref", nargs="+", help="参照音声のパス（複数可）、または auto（--dataset から複数自動選択）。省略で参照なし")
+    s.add_argument("--ref-seconds", type=float, help="--ref auto で選ぶ合計秒数（既定: [infer] ref_total_sec）")
     s.add_argument("--dataset")
     s.add_argument("--style", default="normal", help="caption に使うスタイル（project.toml の [styles]）")
     s.add_argument("--caption", help="caption を直接指定")
@@ -391,16 +411,23 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--device", help="mps / cuda / cpu（既定: 自動）")
     s.add_argument("--precision", default="fp32", choices=["fp32", "bf16"])
     s.add_argument("--dry-run", action="store_true")
-    s.add_argument("extra", nargs=argparse.REMAINDER, help="-- 以降は infer.py にそのまま渡す")
-    s.set_defaults(func=cmd_infer)
+    s.set_defaults(func=cmd_infer, accepts_extra=True)  # -- 以降は infer.py にそのまま渡す
     return ap
 
 
 def main(argv: list[str] | None = None) -> int:
     ap = build_parser()
+    # `--` 以降は Irodori-TTS のスクリプトにそのまま渡す。argparse.REMAINDER を位置引数の後ろに置くと
+    # `train run v1 --run x --dry-run` の --run 以降まで飲み込んでしまうので、自前で分ける。
+    argv = list(sys.argv[1:] if argv is None else argv)
+    extra: list[str] = []
+    if "--" in argv:
+        i = argv.index("--")
+        argv, extra = argv[:i], argv[i + 1 :]
     a = ap.parse_args(argv)
-    if hasattr(a, "extra") and a.extra and a.extra[0] == "--":
-        a.extra = a.extra[1:]
+    if extra and not getattr(a, "accepts_extra", False):
+        ap.error("`--` 以降の引数を受け付けるのは train run と infer だけです")
+    a.extra = extra
     try:
         return int(a.func(a) or 0)
     except (FileNotFoundError, KeyError, ValueError, RuntimeError) as e:

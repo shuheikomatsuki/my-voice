@@ -142,26 +142,58 @@ def build(
     return stats
 
 
-def pick_reference(project: Project, dataset: str, style: str = "normal", min_sec: float = 3.0, max_sec: float = 10.0) -> Path:
-    """推論用の参照音声を自動選択（指定スタイル・長さ適度・S/N 最良）。"""
+def _reference_candidates(
+    project: Project, dataset: str, style: str, min_sec: float, max_sec: float
+) -> list[tuple[float, float, Path]]:
+    """(score, duration, path) を score の高い順に返す。score は S/N から問題の数を引いたもの。"""
     d = project.datasets_dir / dataset
     meta = d / "metadata.csv"
     if not meta.is_file():
         raise FileNotFoundError(f"データセットがありません: {d}")
     t = qc.thresholds(project.section("qc"))
-    best: tuple[float, Path] | None = None
+    exclude = set(project.section("infer").get("ref_exclude", []))
+    cands: list[tuple[float, float, Path]] = []
     with open(meta, encoding="utf-8") as f:
         for row in csv.DictReader(f):
-            if row.get("style", "normal") != style:
+            if row.get("style", "normal") != style or row.get("utt_id", Path(row["file_name"]).stem) in exclude:
                 continue
             p = d / row["file_name"]
             rep, _ = qc.check_file(p, t)
-            dur = rep.metrics.get("duration_sec", 0)
+            dur = float(rep.metrics.get("duration_sec", 0))
             if rep.status == qc.ERROR or not (min_sec <= dur <= max_sec):
                 continue
-            score = rep.metrics.get("snr_db", 0) - 5 * len(rep.issues)
-            if best is None or score > best[0]:
-                best = (score, p)
-    if best is None:
+            cands.append((rep.metrics.get("snr_db", 0) - 5 * len(rep.issues), dur, p))
+    if not cands:
         raise RuntimeError(f"style={style} で参照音声に使える {min_sec}〜{max_sec}s の音声がありません")
-    return best[1]
+    cands.sort(key=lambda c: (-c[0], c[2].name))
+    return cands
+
+
+def pick_reference(project: Project, dataset: str, style: str = "normal", min_sec: float = 3.0, max_sec: float = 10.0) -> Path:
+    """推論用の参照音声を 1 つ自動選択（指定スタイル・長さ適度・S/N 最良）。"""
+    return _reference_candidates(project, dataset, style, min_sec, max_sec)[0][2]
+
+
+def pick_references(
+    project: Project,
+    dataset: str,
+    style: str = "normal",
+    total_sec: float | None = None,
+    min_sec: float = 2.0,
+    max_sec: float = 10.0,
+) -> list[Path]:
+    """推論用の参照音声を複数選ぶ（S/N の良い順に、合計 total_sec に達するまで）。
+
+    Irodori-TTS v4 は学習時に同じ話者の別の文をつなげた長い参照（1〜120 秒）を使っており、
+    公式も「短い文を複数、合計 30 秒程度」を推奨している。既定は [infer] ref_total_sec。
+    """
+    if total_sec is None:
+        total_sec = float(project.section("infer").get("ref_total_sec", 30.0))
+    chosen: list[Path] = []
+    total = 0.0
+    for _, dur, p in _reference_candidates(project, dataset, style, min_sec, max_sec):
+        chosen.append(p)
+        total += dur
+        if total >= total_sec:
+            break
+    return chosen

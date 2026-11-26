@@ -106,10 +106,18 @@ def torch_info(project: Project) -> str:
     return (p.stdout or p.stderr).strip()
 
 
+def base_model_id(project: Project) -> str:
+    return project.section("irodori").get("base_model", "Aratako/Irodori-TTS-v4.1-Small")
+
+
+def local_base_model(project: Project) -> Path:
+    return project.models_dir / base_model_id(project).split("/")[-1] / "model.safetensors"
+
+
 def download_base_model(project: Project) -> Path:
-    repo_id = project.section("irodori").get("base_model", "Aratako/Irodori-TTS-v4.1-Small")
-    local = project.models_dir / repo_id.split("/")[-1]
-    weights = local / "model.safetensors"
+    repo_id = base_model_id(project)
+    weights = local_base_model(project)
+    local = weights.parent
     if not weights.is_file():
         code = (
             "import sys; from huggingface_hub import snapshot_download;"
@@ -119,6 +127,15 @@ def download_base_model(project: Project) -> Path:
     if not weights.is_file():
         raise IrodoriError(f"model.safetensors が見つかりません: {local}")
     return weights
+
+
+CODEC_REPO = "Aratako/Semantic-DACVAE-Japanese-32dim"  # prepare_manifest.py / v4 checkpoint の既定 codec
+
+
+def download_codec(project: Project) -> None:
+    """DACVAE codec を HF キャッシュに取得（prepare / infer が hf_hub_download で参照する）。"""
+    code = "import sys; from huggingface_hub import hf_hub_download; print(hf_hub_download(repo_id=sys.argv[1], filename='weights.pth'))"
+    run(project, ["-c", code, CODEC_REPO])
 
 
 # ---- 学習 ----------------------------------------------------------------------
@@ -152,6 +169,8 @@ def prepare(project: Project, dataset: str, device: str | None = None, dry_run: 
             "--speaker-id-prefix", "myvoice",
             "--output-manifest", str(manifest.resolve()),
             "--latent-dir", str((w / "latents").resolve()),
+            # HF datasets のキャッシュも work/ に置く（~/.cache に声のデータの情報を残さない）
+            "--cache-dir", str((w / "hf_cache").resolve()),
             "--device", device or default_device(),
         ],
         dry_run=dry_run,
@@ -172,7 +191,8 @@ def train(
     if not manifest.is_file() and not dry_run:
         raise IrodoriError(f"manifest がありません: {manifest}（uv run myvoice train prepare {dataset}）")
     out = run_dir(project, run_name)
-    out.mkdir(parents=True, exist_ok=True)
+    if not dry_run:
+        out.mkdir(parents=True, exist_ok=True)
     args = [
         "train.py",
         "--config", cfg.get("lora_config", "configs/train_v4_small_lora.yaml"),
@@ -186,10 +206,11 @@ def train(
     if resume:
         args += ["--resume", str(Path(resume).resolve())]
     else:
-        weights = download_base_model(project) if not dry_run else Path("models/model.safetensors")
+        weights = download_base_model(project) if not dry_run else local_base_model(project)
         args += ["--init-checkpoint", str(weights.resolve())]
     args += extra or []
-    (out / "myvoice_run.txt").write_text(f"dataset={dataset}\nargs={' '.join(args)}\n", encoding="utf-8")
+    if not dry_run:
+        (out / "myvoice_run.txt").write_text(f"dataset={dataset}\nargs={' '.join(args)}\n", encoding="utf-8")
     run(project, args, dry_run=dry_run)
     return out
 
@@ -230,7 +251,7 @@ def infer(
     text: str,
     output: Path,
     adapter: Path | None = None,
-    ref: Path | None = None,
+    ref: Path | list[Path] | None = None,
     caption: str | None = None,
     device: str | None = None,
     precision: str = "fp32",
@@ -238,13 +259,19 @@ def infer(
     dry_run: bool = False,
 ) -> Path:
     device = device or default_device()
-    base = project.section("irodori").get("base_model", "Aratako/Irodori-TTS-v4.1-Small")
     output.parent.mkdir(parents=True, exist_ok=True)
-    args = ["infer.py", "--hf-checkpoint", base, "--text", text, "--output-wav", str(output.resolve())]
+    # 学習用に models/ へ落としたベースモデルがあればそれを使う（HF キャッシュへの二重ダウンロードを避ける）
+    local = local_base_model(project)
+    ckpt = ["--checkpoint", str(local.resolve())] if local.is_file() else ["--hf-checkpoint", base_model_id(project)]
+    args = ["infer.py", *ckpt, "--text", text, "--output-wav", str(output.resolve())]
     if adapter:
         args += ["--lora-adapter", str(adapter.resolve())]
-    if ref:
-        args += ["--ref-wav", str(ref.resolve())]
+    refs = [ref] if isinstance(ref, Path) else list(ref or [])
+    if len(refs) == 1:
+        args += ["--ref-wav", str(refs[0].resolve())]
+    elif refs:
+        # 各クリップを個別にエンコードして順に連結（上限は checkpoint の ref_max_seconds）
+        args += ["--ref-wavs", *[str(r.resolve()) for r in refs]]
     else:
         args += ["--no-ref"]
     if caption:

@@ -130,6 +130,7 @@ rsync -av data/datasets/v2 user@gpu-server:~/my-voice/data/datasets/
 git clone https://github.com/shuheikomatsuki/my-voice.git && cd my-voice
 uv sync
 uv run myvoice irodori setup --backend cu128   # Blackwell は CUDA 12.8 版が必要
+uv run myvoice irodori download                 # ベースモデル (models/, 3GB) と codec (HF キャッシュ)
 uv run myvoice doctor                           # torch / cuda / GPU 名を確認
 
 uv run myvoice train prepare v2                 # 潜在表現 + manifest（work/v2/）
@@ -137,7 +138,10 @@ uv run myvoice train run v2 --run v2-r16        # LoRA 学習 → outputs/runs/v
 ```
 
 - 公式 LoRA 設定（`train_v4_small_lora.yaml`）は大規模データ向けなので、少量データ向けの値を
-  `configs/project.toml` の `[irodori.train_overrides]` で上書きしている（batch 16、3000 steps、500 steps ごとに保存）
+  `configs/project.toml` の `[irodori.train_overrides]` で上書きしている（v1 の 100 文向けに batch 16、1500 steps ≒ 300 epoch、250 steps ごとに保存）。
+  データを増やしたら steps/epoch が変わるので max_steps を見直す
+- `checkpoint_best_n = 0` にしている。>0 だと検証 loss 上位以外の途中チェックポイントが消え、聞き比べられなくなる
+- 検証 loss（`valid_ratio = 0.1`）は揺れが大きいので発散の確認用。チェックポイントは聞き比べで選ぶ
 - `--` 以降は `train.py` にそのまま渡す: `uv run myvoice train run v2 --run v2-r32 -- --lora-r 32 --lora-alpha 64`
 - VRAM 不足: `-- --gradient-checkpointing` または `batch_size = 8`
 - 再開: `uv run myvoice train run v2 --run v2-r16 --resume outputs/runs/v2-r16/checkpoint_0001000`
@@ -150,7 +154,8 @@ uv run myvoice train samples v2-r16 --with-base
 ```
 
 各チェックポイントでテスト文（`[infer] test_sentences`）を合成し、`outputs/runs/v2-r16/samples/<checkpoint>/` に保存（生成音声も自動で壊れチェック）。
-参照音声はデータセットから S/N の良い 3〜10 秒の文を自動選択（`--ref auto`）。似ていて、かつ発音が崩れていないものを選ぶ。
+参照音声はデータセットから S/N の良い 2〜10 秒の文を、合計約 30 秒（`[infer] ref_total_sec`、`--ref-seconds`）になるまで複数自動選択して `--ref-wavs` で渡す（`--ref auto`）。
+学習時も同じ話者の別の文をつなげた長い参照を使っているため。`--ref a.wav b.wav` で直接指定もできる。似ていて、かつ発音が崩れていないものを選ぶ。
 ステップが進みすぎると過学習で不自然になりやすい。
 
 ## 5. 推論（MacBook Pro M2）
