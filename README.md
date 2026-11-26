@@ -138,7 +138,7 @@ uv run myvoice train run v2 --run v2-r16        # LoRA 学習 → outputs/runs/v
 ```
 
 - 公式 LoRA 設定（`train_v4_small_lora.yaml`）は大規模データ向けなので、少量データ向けの値を
-  `configs/project.toml` の `[irodori.train_overrides]` で上書きしている（v1 の 100 文向けに batch 16、1500 steps ≒ 300 epoch、250 steps ごとに保存）。
+  `configs/project.toml` の `[irodori.train_overrides]` で上書きしている（v2 の 424 文向けに batch 16、3000 steps ≒ 125 epoch、500 steps ごとに保存）。
   データを増やしたら steps/epoch が変わるので max_steps を見直す
 - `checkpoint_best_n = 0` にしている。>0 だと検証 loss 上位以外の途中チェックポイントが消え、聞き比べられなくなる
 - 検証 loss（`valid_ratio = 0.1`）は揺れが大きいので発散の確認用。チェックポイントは聞き比べで選ぶ

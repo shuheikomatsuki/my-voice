@@ -197,7 +197,7 @@ def test_irodori_commands_dry_run(project_root, monkeypatch, capsys):
     irodori.train(p, "v1", "exp1", dry_run=True)
     out = capsys.readouterr().out
     assert "prepare_manifest.py" in out and "--speaker-id-prefix myvoice" in out
-    assert "--max-steps 1500" in out and "--batch-size 16" in out and "--init-checkpoint" in out
+    assert "--max-steps 3000" in out and "--batch-size 16" in out and "--init-checkpoint" in out
     assert "--checkpoint-best-n 0" in out and "--valid-ratio 0.1" in out
     assert "IRODORI_SDPA_CUDNN=0" in out  # cuDNN attention は形が変わるたびに CPU で計画を作り直し遅い
 

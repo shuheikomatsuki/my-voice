@@ -90,21 +90,22 @@ PYTORCH_CUDA_ALLOC_CONF = "expandable_segments:True"
 
 # 公式 LoRA 設定は大規模データ向け（batch 40 × 累積 2、30000 steps）。
 # キーは train.py の引数名（_ は - に変換）。データ量に合わせて steps を決める:
-#   v1（100 文 → 学習 90 文）: batch 16 で 5 steps/epoch → 1500 steps ≒ 300 epoch
-#   v2（約 420 文）にするときは steps/epoch が約 4 倍になるので max_steps を見直す
-# 250 steps ごとに保存し、`myvoice train samples` で聞き比べて選ぶ。
+#   v1（100 文 → 学習 90 文）: batch 16 で 5 steps/epoch。1500 steps ≒ 300 epoch で回したところ、
+#     検証 loss は 250 steps（≒50 epoch）で最小、以降は上昇（2026-11-26, v1-r16）
+#   v2（424 文 → 学習 約 382 文）: 約 24 steps/epoch → 3000 steps ≒ 125 epoch（今の設定）
+# 500 steps ごとに保存し、`myvoice train samples` で聞き比べて選ぶ。
 # checkpoint_best_n は 0 にする: >0 だと「最新 1 つ + 検証 loss 上位 N 個」以外の
 # 途中チェックポイントが削除され、聞き比べができなくなる（train.py の仕様）。
 # VRAM が足りなければ batch_size を 8 に下げるか、train run の後ろに -- --gradient-checkpointing。
 [irodori.train_overrides]
 batch_size = 16
 gradient_accumulation_steps = 1
-max_steps = 1500
-warmup_steps = 50
-stable_steps = 1100
+max_steps = 3000
+warmup_steps = 100
+stable_steps = 2300
 min_lr_scale = 0.1
-save_every = 250
-valid_every = 50
+save_every = 500
+valid_every = 100
 log_every = 10
 checkpoint_best_n = 0
 num_workers = 4
