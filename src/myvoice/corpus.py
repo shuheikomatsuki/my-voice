@@ -1,5 +1,8 @@
 """ITA コーパス（パブリックドメイン）の取得と、録音セッション台本の生成。
 
+ITA 以外に、自分で書いた台本も使える: data/corpus/<corpus>_transcript_utf8.txt に
+ITA と同じ形式（1 行 1 文、`ID:本文,カタカナ読み`、ID は CASUAL_001 のように「_番号」で終わる）で置く。
+
 録音は「セッション」単位で行う。セッション ID は
     <corpus>-<style>-sNN       例: emotion-normal-s01
 で、録音ファイル名はこの ID にする（例: recordings/emotion-normal-s01.m4a）。
@@ -70,11 +73,15 @@ def fetch(project: Project, force: bool = False) -> dict[str, Path]:
     return paths
 
 
+def corpus_path(project: Project, corpus: str) -> Path:
+    return project.corpus_dir / ITA_FILES.get(corpus, f"{corpus}_transcript_utf8.txt")
+
+
 def load_corpus(project: Project, corpus: str) -> list[Sentence]:
-    if corpus not in ITA_FILES:
-        raise KeyError(f"未知のコーパス: {corpus}（{', '.join(ITA_FILES)}）")
-    path = project.corpus_dir / ITA_FILES[corpus]
+    path = corpus_path(project, corpus)
     if not path.is_file():
+        if corpus not in ITA_FILES:
+            raise FileNotFoundError(f"コーパス '{corpus}' の台本がありません: {path}")
         fetch(project)
     return parse_ita(path.read_text(encoding="utf-8"))
 
@@ -148,9 +155,10 @@ def write_scripts(project: Project, phase: str) -> list[Path]:
             f"# {sid}  （録音ファイル名: {sid}.m4a）",
             f"# 話し方: {style} — {project.caption_for(style)}",
             f"# {len(utts)} 文。1 文ごとに 1.5〜2 秒あけて読む。間違えたら 3 秒黙ってその文を読み直す。",
-            f"# 番号は ITA コーパス朗読者用 PDF の番号と同じ（ふりがなは PDF を参照）。",
-            "",
         ]
+        if utts[0].corpus in ITA_FILES:
+            lines.append("# 番号は ITA コーパス朗読者用 PDF の番号と同じ（ふりがなは PDF を参照）。")
+        lines.append("")
         for u in utts:
             lines.append(f"{Sentence(u.corpus_id, u.text, u.reading).number:>3}. {u.text}")
             lines.append(f"     （{u.reading}）")

@@ -11,7 +11,7 @@ from conftest import SR, recording, silence, voice
 
 from myvoice import qc
 from myvoice.align import align, normalize, similarity
-from myvoice.corpus import count_morae, get_session, parse_ita
+from myvoice.corpus import count_morae, get_session, parse_ita, write_scripts
 from myvoice.dataset import build, pick_reference, pick_references
 from myvoice.project import Project
 from myvoice.segment import detect_chunks
@@ -75,6 +75,22 @@ def test_corpus_parse_and_morae():
 def _write(path, x):
     sf.write(str(path), x, SR, subtype="PCM_24")
     return path
+
+
+def test_local_corpus_scripts(project_root):
+    p = Project.load()
+    with pytest.raises(FileNotFoundError):
+        get_session(p, "casual-casual-s01")
+    (p.corpus_dir / "casual_transcript_utf8.txt").write_text(
+        "CASUAL_001:いやー、今日まじで暑くない？,イヤー、キョーマジデアツクナイ？\n"
+        "CASUAL_002:うん、うん、わかるわかる。,ウン、ウン、ワカルワカル。\n",
+        encoding="utf-8",
+    )
+    utts = get_session(p, "casual-casual-s01")
+    assert [u.utt_id for u in utts] == ["CASUAL_001_casual", "CASUAL_002_casual"]
+    (path,) = write_scripts(p, "phase4")
+    txt = path.read_text(encoding="utf-8")
+    assert "  1. いやー、今日まじで暑くない？" in txt and "ITA" not in txt
 
 
 def test_qc_detects_problems(tmp_path):

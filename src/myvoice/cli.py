@@ -63,7 +63,11 @@ def cmd_script(a) -> int:
     p = _p()
     phases = [a.phase] if a.phase else [ph["name"] for ph in p.phases]
     for ph in phases:
-        paths = corpus.write_scripts(p, ph)
+        try:
+            paths = corpus.write_scripts(p, ph)
+        except FileNotFoundError as e:
+            print(f"[{ph}] スキップ: {e}")
+            continue
         print(f"[{ph}] {len(paths)} セッション → {p.scripts_dir / ph}")
         for path in paths:
             print(f"    {path.stem}.m4a  ← {path.name} を読む")
@@ -135,7 +139,11 @@ def cmd_status(a) -> int:
 
     p = _p()
     for ph in p.phases:
-        sess = corpus.sessions_for_phase(p, ph["name"])
+        try:
+            sess = corpus.sessions_for_phase(p, ph["name"])
+        except FileNotFoundError as e:
+            print(f"[{ph['name']}] {e}\n")
+            continue
         done = 0
         total = 0
         minutes = 0.0
