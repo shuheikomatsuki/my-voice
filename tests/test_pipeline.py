@@ -183,6 +183,8 @@ def test_split_partial_with_append(project_root):
 def test_irodori_commands_dry_run(project_root, monkeypatch, capsys):
     from myvoice import irodori
 
+    monkeypatch.delenv("IRODORI_SDPA_CUDNN", raising=False)
+
     fake = project_root / "third_party" / "Irodori-TTS"
     fake.mkdir(parents=True)
     (fake / "train.py").write_text("")
@@ -197,6 +199,7 @@ def test_irodori_commands_dry_run(project_root, monkeypatch, capsys):
     assert "prepare_manifest.py" in out and "--speaker-id-prefix myvoice" in out
     assert "--max-steps 1500" in out and "--batch-size 16" in out and "--init-checkpoint" in out
     assert "--checkpoint-best-n 0" in out and "--valid-ratio 0.1" in out
+    assert "IRODORI_SDPA_CUDNN=0" in out  # cuDNN attention は形が変わるたびに CPU で計画を作り直し遅い
 
     run = irodori.run_dir(p, "exp1")
     for name in ["checkpoint_0001000", "checkpoint_best_val_loss_0000500_1.234567", "checkpoint_final", "checkpoint_0000250"]:

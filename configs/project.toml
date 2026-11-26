@@ -78,6 +78,16 @@ lora_config = "configs/train_v4_small_lora.yaml"
 # 検証 loss はランダムな t・ノイズで毎回計算され揺れが大きいので、発散の確認程度に使う。
 valid_ratio = 0.1
 
+# Irodori-TTS を呼ぶときに付ける環境変数（シェルで同じ変数を設定していればそちらが優先）
+[irodori.env]
+# Irodori は bool mask 付き attention で cuDNN を最優先にするが、cuDNN は入力の形が変わるたびに
+# 実行計画を CPU で作り直す。参照音声の長さが毎回ランダムな学習では 1 回 ~2 秒かかり、
+# GPU がほぼ遊んで 2.6 s/step になった（2026-11-26, RTX PRO 4000）。0 で EFFICIENT_ATTENTION に
+# 切り替えると 0.5 s/step（約 5 倍）。推論も文ごとに形が変わるので同様に効く。
+IRODORI_SDPA_CUDNN = "0"
+# メモリの断片化による OOM を避ける
+PYTORCH_CUDA_ALLOC_CONF = "expandable_segments:True"
+
 # 公式 LoRA 設定は大規模データ向け（batch 40 × 累積 2、30000 steps）。
 # キーは train.py の引数名（_ は - に変換）。データ量に合わせて steps を決める:
 #   v1（100 文 → 学習 90 文）: batch 16 で 5 steps/epoch → 1500 steps ≒ 300 epoch

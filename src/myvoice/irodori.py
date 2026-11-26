@@ -52,15 +52,23 @@ def ensure_installed(project: Project) -> Path:
     return d
 
 
+def run_env_overrides(project: Project) -> dict[str, str]:
+    """[irodori.env] の環境変数。シェルで同じ変数を設定していればそちらを優先する。"""
+    return {k: str(v) for k, v in project.section("irodori").get("env", {}).items() if k not in os.environ}
+
+
 def run(project: Project, args: list[str], dry_run: bool = False) -> None:
     """Irodori-TTS の uv 環境で python スクリプトを実行する。"""
     d = ensure_installed(project)
     cmd = [_uv(), "run", "--no-sync", "python", *args]
-    print("$ (cd", shlex.quote(str(d)), "&&", " ".join(shlex.quote(c) for c in cmd[1:]) + ")", flush=True)
+    extra_env = run_env_overrides(project)
+    env_str = "".join(f"{k}={shlex.quote(v)} " for k, v in extra_env.items())
+    print("$ (cd", shlex.quote(str(d)), "&&", env_str + " ".join(shlex.quote(c) for c in cmd[1:]) + ")", flush=True)
     if dry_run:
         return
     env = dict(os.environ)
     env.pop("VIRTUAL_ENV", None)  # my-voice 側の venv を引き継がない
+    env.update(extra_env)
     proc = subprocess.run(cmd, cwd=d, env=env)
     if proc.returncode != 0:
         raise IrodoriError(f"Irodori-TTS のコマンドが失敗しました (exit {proc.returncode})")
