@@ -1,5 +1,7 @@
 # 引き継ぎメモ（クラウド → ローカルの Claude Code セッション）
 
+> 最新の状況（GPU サーバーでの学習結果と次の作業）は [HANDOFF_SERVER.md](HANDOFF_SERVER.md) を参照。このメモは録音前に書いたもの。
+
 ローカルの Claude Code に最初に貼るプロンプト:
 
 ```text
