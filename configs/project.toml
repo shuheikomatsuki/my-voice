@@ -103,7 +103,9 @@ PYTORCH_CUDA_ALLOC_CONF = "expandable_segments:True"
 # キーは train.py の引数名（_ は - に変換）。データ量に合わせて steps を決める:
 #   v1（100 文 → 学習 90 文）: batch 16 で 5 steps/epoch。1500 steps ≒ 300 epoch で回したところ、
 #     検証 loss は 250 steps（≒50 epoch）で最小、以降は上昇（2026-11-26, v1-r16）
-#   v2（424 文 → 学習 約 382 文）: 約 24 steps/epoch → 3000 steps ≒ 125 epoch（今の設定）
+#   v2（424 文 → 学習 約 382 文）: 約 24 steps/epoch → 3000 steps ≒ 125 epoch。
+#     検証 loss は 1800 steps（≒75 epoch）で最小、はっきりした過学習はなし（2026-11-27, v2-r16）
+#   v3（924 文 → 学習 約 832 文、朗読 + 会話調）: 約 52 steps/epoch → 5000 steps ≒ 96 epoch（今の設定）
 # 500 steps ごとに保存し、`myvoice train samples` で聞き比べて選ぶ。
 # checkpoint_best_n は 0 にする: >0 だと「最新 1 つ + 検証 loss 上位 N 個」以外の
 # 途中チェックポイントが削除され、聞き比べができなくなる（train.py の仕様）。
@@ -111,9 +113,9 @@ PYTORCH_CUDA_ALLOC_CONF = "expandable_segments:True"
 [irodori.train_overrides]
 batch_size = 16
 gradient_accumulation_steps = 1
-max_steps = 3000
+max_steps = 5000
 warmup_steps = 100
-stable_steps = 2300
+stable_steps = 3900
 min_lr_scale = 0.1
 save_every = 500
 valid_every = 100
