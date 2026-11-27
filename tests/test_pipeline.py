@@ -81,7 +81,8 @@ def test_local_corpus_scripts(project_root):
     p = Project.load()
     with pytest.raises(FileNotFoundError):
         get_session(p, "casual-casual-s01")
-    (p.corpus_dir / "casual_transcript_utf8.txt").write_text(
+    p.own_corpus_dir.mkdir(exist_ok=True)
+    (p.own_corpus_dir / "casual_transcript_utf8.txt").write_text(
         "CASUAL_001:いやー、今日まじで暑くない？,イヤー、キョーマジデアツクナイ？\n"
         "CASUAL_002:うん、うん、わかるわかる。,ウン、ウン、ワカルワカル。\n",
         encoding="utf-8",

@@ -82,9 +82,7 @@ LoRA r16（diffusion_attn、学習するパラメータ 26.4M / 792M）、batch 
 
 ## 次にやること: 会話調の録音（phase4）
 ユーザーは「会話調の台本を、自由に話しているつもりで読む」方法を選んだ。
-1. 台本の下書き 50 文が、サーバーの `data/corpus/casual_transcript_utf8.txt` にある
-   （data/ なのでコミットしていない）。Mac には次のコマンドで持ってくる:
-   `rsync -av helen-home:/workH/kmt/prv/my-voice/data/corpus/casual_transcript_utf8.txt ~/my-voice/data/corpus/`
+1. 台本の下書き 50 文が `corpus/casual_transcript_utf8.txt` にある（リポジトリで管理。git pull で Mac にも来る）
    - 形式は ITA と同じ `CASUAL_001:本文,カタカナ読み`。本文を直したら読みも直す（台本との照合とモーラ数のチェックに使う）
    - 一人称（僕・私・俺など）はユーザーに合うものがわからないので入れていない
 2. ユーザーが自分の言い回しに直す。口調に問題がなければ、全部で 250〜300 文（音声で 10〜15 分）まで書き足す

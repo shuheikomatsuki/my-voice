@@ -1,6 +1,6 @@
 """ITA コーパス（パブリックドメイン）の取得と、録音セッション台本の生成。
 
-ITA 以外に、自分で書いた台本も使える: data/corpus/<corpus>_transcript_utf8.txt に
+ITA 以外に、自分で書いた台本も使える: corpus/<corpus>_transcript_utf8.txt（リポジトリで管理）に
 ITA と同じ形式（1 行 1 文、`ID:本文,カタカナ読み`、ID は CASUAL_001 のように「_番号」で終わる）で置く。
 
 録音は「セッション」単位で行う。セッション ID は
@@ -74,7 +74,9 @@ def fetch(project: Project, force: bool = False) -> dict[str, Path]:
 
 
 def corpus_path(project: Project, corpus: str) -> Path:
-    return project.corpus_dir / ITA_FILES.get(corpus, f"{corpus}_transcript_utf8.txt")
+    if corpus in ITA_FILES:
+        return project.corpus_dir / ITA_FILES[corpus]
+    return project.own_corpus_dir / f"{corpus}_transcript_utf8.txt"
 
 
 def load_corpus(project: Project, corpus: str) -> list[Sentence]:

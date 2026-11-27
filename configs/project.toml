@@ -22,7 +22,7 @@ caption = "怒って強い口調で話す話者"
 [styles.sad]
 caption = "悲しげに沈んだ小さめの声で話す話者"
 
-# 会話調。自分で書いた会話の台本（data/corpus/casual_transcript_utf8.txt）を、
+# 会話調。自分で書いた会話の台本（corpus/casual_transcript_utf8.txt）を、
 # 普段しゃべるように読んだ録音に付ける
 [styles.casual]
 caption = "友達と雑談するように、くだけた自然な口調で話す話者"
@@ -45,7 +45,7 @@ name = "phase3"
 corpus = "emotion"
 styles = ["happy", "angry", "sad"]
 
-# 自作の会話調台本（ITA ではない）。台本は data/corpus/casual_transcript_utf8.txt
+# 自作の会話調台本（ITA ではない）。台本は corpus/casual_transcript_utf8.txt
 [[phases]]
 name = "phase4"
 corpus = "casual"

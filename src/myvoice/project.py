@@ -80,6 +80,11 @@ class Project:
         return self.data_dir / "corpus"
 
     @property
+    def own_corpus_dir(self) -> Path:
+        """自分で書いた台本（ITA 以外）。声のデータではないのでリポジトリで管理する。"""
+        return self.root / "corpus"
+
+    @property
     def scripts_dir(self) -> Path:
         return self.data_dir / "scripts"
 

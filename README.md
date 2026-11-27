@@ -70,8 +70,8 @@ uv run myvoice script --phase phase1
 | phase3 | Emotion 100 文を 喜び/怒り/悲しみ で | 各 約 10 分 | 各 30〜45 分 |
 | phase4 | 自作の会話調台本を普段しゃべるように | 50 文で 約 2 分 | 50 文で 約 15 分 |
 
-phase4 の台本は ITA ではなく自分で書く: `data/corpus/casual_transcript_utf8.txt` に
-ITA と同じ形式（`CASUAL_001:本文,カタカナ読み`、1 行 1 文）で置く（data/ なのでコミットされない）。
+phase4 の台本は ITA ではなく自分で書く: `corpus/casual_transcript_utf8.txt` に
+ITA と同じ形式（`CASUAL_001:本文,カタカナ読み`、1 行 1 文）で置く（文字だけなのでリポジトリで管理する）。
 朗読口調にならないよう、自分の言い回しで書き、1 文ずつ覚えて画面から目を離して話しかけるように言う。
 
 ### iPhone での録り方
