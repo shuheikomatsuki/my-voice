@@ -168,17 +168,21 @@ uv run myvoice train samples v2-r16 --with-base
 ```bash
 uv sync
 uv run myvoice irodori setup          # Mac は cpu extra（PyPI の torch で MPS が使える）
-rsync -av user@gpu-server:~/my-voice/outputs/runs/v2-r16/checkpoint_0002000 outputs/runs/v2-r16/
-rsync -av user@gpu-server:~/my-voice/data/datasets/v2 data/datasets/   # 参照音声用（任意）
+rsync -av user@gpu-server:~/my-voice/outputs/runs/v3-r16/checkpoint_0005000 outputs/runs/v3-r16/
+rsync -av user@gpu-server:~/my-voice/data/datasets/v3 data/datasets/   # 参照音声用（任意）
 ```
 
 ```bash
-uv run myvoice infer --adapter v2-r16/checkpoint_0002000 --ref auto --dataset v2 \
+uv run myvoice infer --adapter v3-r16/checkpoint_0005000 --ref auto --dataset v3 --style normal \
   --text "これは自分の声で合成したテストです。" --out outputs/test.wav
 
-uv run myvoice infer --adapter v2-r16 --ref auto --dataset v2 --style happy --text-file lines.txt --out outputs/batch/
-uv run myvoice infer --adapter v2-r16 --text "参照音声なし、caption のみ" --style normal
+uv run myvoice infer --adapter v3-r16/checkpoint_0005000 --ref auto --dataset v3 --style casual --text-file lines.txt --out outputs/batch/
+uv run myvoice infer --adapter v3-r16/checkpoint_0005000 --text "参照音声なし、caption のみ" --style casual
 ```
+
+- 標準のモデルは **v3-r16 の 5000 steps**（朗読 424 文 + 会話調 500 文。2026-11-27 に聞き比べて決定。2500〜5000 steps で耳での差はほぼない）。
+  話し方は `--style` の caption で切り替える: `normal`＝落ち着いた普通の調子、`casual`＝くだけた会話調。
+  会話調の速さは caption でほぼ決まり、参照音声が朗読でも本物に近い速さになる
 
 - Mac は既定で `--device mps`、**fp32**（MPS で bf16 は遅くなる報告あり）
 - 複数の文（`--text-file` や `train samples`）は、モデルを 1 回だけ読み込んで続けて合成する（`irodori.infer_batch`）。
