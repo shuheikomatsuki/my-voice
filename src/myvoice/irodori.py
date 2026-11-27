@@ -5,12 +5,15 @@ Irodori-TTS 側のコマンドは公式 README / docs/parameters.md のものに
 
 from __future__ import annotations
 
+import json
 import os
 import platform
 import re
 import shlex
 import shutil
 import subprocess
+import tempfile
+from dataclasses import dataclass
 from pathlib import Path
 
 from .project import Project
@@ -254,6 +257,34 @@ def resolve_adapter(project: Project, adapter: str) -> Path:
 
 
 # ---- 推論 ----------------------------------------------------------------------
+def _infer_common_args(
+    project: Project, ref: Path | list[Path] | None, device: str, precision: str
+) -> list[str]:
+    # 学習用に models/ へ落としたベースモデルがあればそれを使う（HF キャッシュへの二重ダウンロードを避ける）
+    local = local_base_model(project)
+    args = ["--checkpoint", str(local.resolve())] if local.is_file() else ["--hf-checkpoint", base_model_id(project)]
+    refs = [ref] if isinstance(ref, Path) else list(ref or [])
+    if len(refs) == 1:
+        args += ["--ref-wav", str(refs[0].resolve())]
+    elif refs:
+        # 各クリップを個別にエンコードして順に連結（上限は checkpoint の ref_max_seconds）
+        args += ["--ref-wavs", *[str(r.resolve()) for r in refs]]
+    else:
+        args += ["--no-ref"]
+    args += ["--model-device", device, "--codec-device", device]
+    args += ["--model-precision", precision, "--codec-precision", precision]
+    return args
+
+
+def _infer_job_args(text: str, output: Path, adapter: Path | None, caption: str | None) -> list[str]:
+    args = ["--text", text, "--output-wav", str(output.resolve())]
+    if adapter:
+        args += ["--lora-adapter", str(adapter.resolve())]
+    if caption:
+        args += ["--caption", caption]
+    return args
+
+
 def infer(
     project: Project,
     text: str,
@@ -268,24 +299,50 @@ def infer(
 ) -> Path:
     device = device or default_device()
     output.parent.mkdir(parents=True, exist_ok=True)
-    # 学習用に models/ へ落としたベースモデルがあればそれを使う（HF キャッシュへの二重ダウンロードを避ける）
-    local = local_base_model(project)
-    ckpt = ["--checkpoint", str(local.resolve())] if local.is_file() else ["--hf-checkpoint", base_model_id(project)]
-    args = ["infer.py", *ckpt, "--text", text, "--output-wav", str(output.resolve())]
-    if adapter:
-        args += ["--lora-adapter", str(adapter.resolve())]
-    refs = [ref] if isinstance(ref, Path) else list(ref or [])
-    if len(refs) == 1:
-        args += ["--ref-wav", str(refs[0].resolve())]
-    elif refs:
-        # 各クリップを個別にエンコードして順に連結（上限は checkpoint の ref_max_seconds）
-        args += ["--ref-wavs", *[str(r.resolve()) for r in refs]]
-    else:
-        args += ["--no-ref"]
-    if caption:
-        args += ["--caption", caption]
-    args += ["--model-device", device, "--codec-device", device]
-    args += ["--model-precision", precision, "--codec-precision", precision]
+    args = ["infer.py", *_infer_common_args(project, ref, device, precision)]
+    args += _infer_job_args(text, output, adapter, caption)
     args += extra or []
     run(project, args, dry_run=dry_run)
     return output
+
+
+@dataclass
+class InferJob:
+    text: str
+    output: Path
+    adapter: Path | None = None  # 文ごとに変えてよい（LoRA はパスごとにキャッシュされる）
+    caption: str | None = None
+
+
+BATCH_SCRIPT = Path(__file__).parent / "irodori_scripts" / "batch_infer.py"
+
+
+def infer_batch(
+    project: Project,
+    jobs: list[InferJob],
+    ref: Path | list[Path] | None = None,
+    device: str | None = None,
+    precision: str = "fp32",
+    extra: list[str] | None = None,
+    dry_run: bool = False,
+) -> list[Path]:
+    """複数の文を、モデルを 1 回だけ読み込んで合成する（中身は infer.py と同じ処理）。
+
+    1 文ずつ infer() を呼ぶと毎回 約 20 秒かけてモデルを読み込み直すが、こちらは最初の 1 回だけ。
+    参照音声・device・precision・extra は全文で共通。
+    """
+    device = device or default_device()
+    for j in jobs:
+        j.output.parent.mkdir(parents=True, exist_ok=True)
+    tmp = project.work_dir / "tmp"
+    tmp.mkdir(parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile("w", encoding="utf-8", suffix=".jsonl", dir=tmp, delete=False) as f:
+        for j in jobs:
+            f.write(json.dumps({"args": _infer_job_args(j.text, j.output, j.adapter, j.caption)}, ensure_ascii=False) + "\n")
+        jobs_path = Path(f.name)
+    try:
+        args = [str(BATCH_SCRIPT.resolve()), "--jobs", str(jobs_path), *_infer_common_args(project, ref, device, precision)]
+        run(project, args + (extra or []), dry_run=dry_run)
+    finally:
+        jobs_path.unlink(missing_ok=True)
+    return [j.output for j in jobs]

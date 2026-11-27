@@ -254,3 +254,41 @@ def test_cli_passes_only_args_after_double_dash(project_root, monkeypatch):
     assert seen["extra"] == [] and seen["dry_run"] is False
     with pytest.raises(SystemExit):
         cli.main(["status", "--", "--x"])
+
+
+def test_infer_batch_writes_one_job_per_sentence(project_root, monkeypatch, tmp_path):
+    """infer_batch: 共通引数（参照・device）は 1 回、文ごとの引数は jobs.jsonl に入れて batch_infer.py に渡す。"""
+    import json
+
+    from myvoice import irodori
+
+    p = Project.load()
+    seen = {}
+
+    def fake_run(project, args, dry_run=False):
+        seen["args"] = args
+        jobs = Path(args[args.index("--jobs") + 1])
+        seen["jobs"] = [json.loads(l)["args"] for l in jobs.read_text(encoding="utf-8").splitlines()]
+
+    monkeypatch.setattr(irodori, "run", fake_run)
+    ad = tmp_path / "ck"
+    jobs = [irodori.InferJob("一つ目。", tmp_path / "o" / "a.wav", ad, "cap"), irodori.InferJob("二つ目。", tmp_path / "o" / "b.wav")]
+    irodori.infer_batch(p, jobs, ref=[tmp_path / "r1.wav", tmp_path / "r2.wav"], device="cuda")
+    args = seen["args"]
+    assert args[0].endswith("batch_infer.py") and Path(args[0]).is_file()
+    assert "--ref-wavs" in args and "--model-device" in args and "--text" not in args
+    assert seen["jobs"][0][:2] == ["--text", "一つ目。"] and "--lora-adapter" in seen["jobs"][0] and "cap" in seen["jobs"][0]
+    assert seen["jobs"][1] == ["--text", "二つ目。", "--output-wav", str((tmp_path / "o" / "b.wav").resolve())]
+    assert not list((p.work_dir / "tmp").glob("*.jsonl"))  # jobs ファイルは消す
+
+
+def test_cli_infer_text_file_names_and_batch(project_root, monkeypatch, tmp_path):
+    """--text-file の「名前<TAB>文」は <名前>.wav、名前なしは連番。複数文は infer_batch で 1 回に。"""
+    from myvoice import cli, irodori
+
+    seen = {}
+    monkeypatch.setattr(irodori, "infer_batch", lambda p, jobs, **kw: seen.update(jobs=jobs) or [])
+    tf = tmp_path / "t.txt"
+    tf.write_text("01\tこんにちは。\n\nさようなら。\n", encoding="utf-8")
+    cli.main(["infer", "--text-file", str(tf), "--out", str(tmp_path / "out"), "--dry-run"])
+    assert [(j.output.name, j.text) for j in seen["jobs"]] == [("01.wav", "こんにちは。"), ("002.wav", "さようなら。")]

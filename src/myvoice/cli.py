@@ -263,14 +263,20 @@ def cmd_train_samples(a) -> int:
     t = qc.thresholds(p.section("qc"))
     outdir = irodori.run_dir(p, a.run) / "samples"
     targets = [None] + cks if a.with_base else cks
-    for ck in targets:
-        name = ck.name if ck else "base"
-        for i, s in enumerate(sentences, 1):
-            out = outdir / name / f"{a.style}_{i:02d}.wav"
-            irodori.infer(p, s, out, adapter=ck, ref=ref, caption=caption, device=a.device, precision=a.precision, dry_run=a.dry_run)
-            if not a.dry_run:
-                rep, _ = qc.check_file(out, t, segmented=False)
-                print(f"  {'✓' if rep.status != qc.ERROR else '✗'} {out}  {'; '.join(map(str, rep.issues))}")
+    # 全チェックポイント × 全文を 1 回のモデル読み込みで合成（LoRA はチェックポイントごとに切り替え）
+    jobs = [
+        irodori.InferJob(s, outdir / (ck.name if ck else "base") / f"{a.style}_{i:02d}.wav", ck, caption)
+        for ck in targets
+        for i, s in enumerate(sentences, 1)
+    ]
+    irodori.infer_batch(p, jobs, ref=ref, device=a.device, precision=a.precision, dry_run=a.dry_run)
+    if not a.dry_run:
+        for j in jobs:
+            if not j.output.is_file():
+                print(f"  ✗ {j.output}  生成されていません")
+                continue
+            rep, _ = qc.check_file(j.output, t, segmented=False)
+            print(f"  {'✓' if rep.status != qc.ERROR else '✗'} {j.output}  {'; '.join(map(str, rep.issues))}")
     print(f"→ {outdir}")
     return 0
 
@@ -290,9 +296,14 @@ def cmd_infer(a) -> int:
     from . import irodori
 
     p = _p()
-    texts = list(a.text or [])
+    # (出力名, 文)。--text-file の行は「文」または「出力名<TAB>文」
+    texts: list[tuple[str | None, str]] = [(None, t) for t in a.text or []]
     if a.text_file:
-        texts += [l.strip() for l in Path(a.text_file).read_text(encoding="utf-8").splitlines() if l.strip()]
+        for line in Path(a.text_file).read_text(encoding="utf-8").splitlines():
+            if not line.strip():
+                continue
+            name, sep, body = line.partition("\t")
+            texts.append((name.strip(), body.strip()) if sep else (None, line.strip()))
     if not texts:
         print("--text か --text-file を指定してください", file=sys.stderr)
         return 2
@@ -305,12 +316,22 @@ def cmd_infer(a) -> int:
     t = qc.thresholds(p.section("qc"))
     out = Path(a.out)
     rc = 0
-    for i, text in enumerate(texts, 1):
-        dst = out if (len(texts) == 1 and out.suffix == ".wav") else (out / f"{i:03d}.wav")
-        irodori.infer(p, text, dst, adapter=adapter, ref=ref, caption=caption, device=a.device, precision=a.precision, extra=a.extra, dry_run=a.dry_run)
-        if not a.dry_run:
-            rep, _ = qc.check_file(dst, t, segmented=False)
-            print(f"{'✓' if rep.status != qc.ERROR else '✗'} {dst}  {text[:30]}  {'; '.join(map(str, rep.issues))}")
+    if len(texts) == 1 and out.suffix == ".wav":
+        jobs = [irodori.InferJob(texts[0][1], out, adapter, caption)]
+    else:
+        jobs = [irodori.InferJob(text, out / f"{name or f'{i:03d}'}.wav", adapter, caption) for i, (name, text) in enumerate(texts, 1)]
+    if len(jobs) == 1:
+        irodori.infer(p, jobs[0].text, jobs[0].output, adapter=adapter, ref=ref, caption=caption, device=a.device, precision=a.precision, extra=a.extra, dry_run=a.dry_run)
+    else:  # モデルを 1 回だけ読み込んで全文を合成
+        irodori.infer_batch(p, jobs, ref=ref, device=a.device, precision=a.precision, extra=a.extra, dry_run=a.dry_run)
+    if not a.dry_run:
+        for j in jobs:
+            if not j.output.is_file():
+                print(f"✗ {j.output}  {j.text[:30]}  生成されていません")
+                rc = 1
+                continue
+            rep, _ = qc.check_file(j.output, t, segmented=False)
+            print(f"{'✓' if rep.status != qc.ERROR else '✗'} {j.output}  {j.text[:30]}  {'; '.join(map(str, rep.issues))}")
             rc |= rep.status == qc.ERROR
     return int(rc)
 
@@ -407,7 +428,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     s = sub.add_parser("infer", help="音声合成（Mac は MPS / fp32 が既定）")
     s.add_argument("--text", action="append")
-    s.add_argument("--text-file", help="1 行 1 文のテキストファイル")
+    s.add_argument("--text-file", help="1 行 1 文のテキストファイル（「出力名<TAB>文」なら <出力名>.wav に保存）")
     s.add_argument("--adapter", help="LoRA: パス / run 名（最新チェックポイント）/ run名/checkpoint名")
     s.add_argument("--ref", nargs="+", help="参照音声のパス（複数可）、または auto（--dataset から複数自動選択）。省略で参照なし")
     s.add_argument("--ref-seconds", type=float, help="--ref auto で選ぶ合計秒数（既定: [infer] ref_total_sec）")

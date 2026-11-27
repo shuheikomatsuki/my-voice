@@ -181,7 +181,9 @@ uv run myvoice infer --adapter v2-r16 --text "参照音声なし、caption の�
 ```
 
 - Mac は既定で `--device mps`、**fp32**（MPS で bf16 は遅くなる報告あり）
-- 1 文ごとにモデルを読み込むので遅い。たくさん合成するなら [Irodori-TTS-Server](https://github.com/Aratako/Irodori-TTS-Server) を常駐させる方が速い
+- 複数の文（`--text-file` や `train samples`）は、モデルを 1 回だけ読み込んで続けて合成する（`irodori.infer_batch`）。
+  RTX PRO 4000 で、読み込み 約 20 秒 + 1 文 約 1.5 秒（1 文ずつ読み込み直すと 1 文 約 25 秒）。同じ seed なら 1 文ずつの合成と同じ音声になる
+- `--text-file` の行を `名前<TAB>文` にすると `<名前>.wav` で保存（名前なしは 001.wav からの連番）
 - 感情を変える: `--style happy`（caption）と、その感情で読んだ参照音声 `--ref` を組み合わせると効きやすい
 
 ## 開発
