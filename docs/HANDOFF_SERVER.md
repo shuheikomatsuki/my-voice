@@ -1,6 +1,6 @@
 # 引き継ぎメモ（GPU サーバー → Mac の Claude Code セッション）
 
-GPU サーバー（ssh 名 `helen-home`、RTX PRO 4000 Blackwell 24GB）で 2026-11-26 に行った作業のまとめ。
+GPU サーバー（ssh 名 `helen-home`、RTX PRO 4000 Blackwell 24GB）で 2026-11-26〜27 に行った作業のまとめ。
 `docs/HANDOFF.md` は録音前に書いた古いメモで、ここが最新。全体の使い方は README.md。
 
 ## 方針（ユーザーとの約束）
@@ -27,7 +27,14 @@ GPU サーバー（ssh 名 `helen-home`、RTX PRO 4000 Blackwell 24GB）で 2026
   CPU で実行計画を作り直していて、学習が 2.6 s/step → 0.5 s/step（約 5 倍速）になった。推論にも効く
 - f28c389: v2 用の学習設定（3000 steps、500 steps ごとに保存、warmup 100 / stable 2300）
 - 6c00b6a: 自作台本（ITA 以外）の読み込みと phase4（会話調、style `casual`）を追加
-- テストは 15 件すべて通る
+- 539511f: 一括合成。`irodori_scripts/batch_infer.py` が 1 つのプロセスで infer.py の main() を文ごとに呼び、
+  モデルの読み込みを Irodori 自身のキャッシュ（get_cached_runtime）に通す。読み込み 約 20 秒 + 1 文 約 1.5 秒
+  （以前は 1 文 約 25 秒）。seed を固定すると 1 文ずつの infer.py と完全に同じ音声になることを確認済み
+  （LoRA と base の切り替えも）。`myvoice infer` の複数文・`train samples`・1 文の `infer` すべてがこれを通る。
+  `--text-file` の行を `名前<TAB>文` にすると `<名前>.wav` で保存
+- e139e43: 保存前にピークを `[infer] peak_dbfs`（-1.0）に抑える。Irodori は波形をそのまま 16bit で保存するので、
+  1.0 をわずかに超えた部分が音割れになっていた（それまでの生成音声はほぼ全部に数〜24 サンプルの音割れがある）
+- テストは 17 件すべて通る
 
 ## 学習の結果
 LoRA r16（diffusion_attn、学習するパラメータ 26.4M / 792M）、batch 16。
@@ -54,6 +61,18 @@ LoRA r16（diffusion_attn、学習するパラメータ 26.4M / 792M）、batch 
 | `outputs/casual_v2/` | 口語の 4 文 × caption（普通 / くだけた）× base / v1 1500 / v2 2000 |
 
 参照音声はすべて、データセットから自動選択した朗読の文（約 30 秒）。
+
+## 動画ナレーションの合成（2026-11-27）
+- 動画のナレーション用に 22 文を合成した。モデルは v2-r16/checkpoint_0002000、参照音声は v2 から自動選択
+  （朗読、約 30 秒）、style は normal
+- 出力はサーバーの `outputs/narration/01.wav`〜`22.wav` と `listen.md`（文・長さ・判定・プレイヤーの一覧）。
+  Mac へは `rsync -av helen-home:/workH/kmt/prv/my-voice/outputs/narration ~/my-voice/outputs/`
+- 22 文の文は `work/narration/texts.tsv`（`id<TAB>文`、英字・数字はかなに置き換え済み）
+- チェック結果: ピークは全部 -1.0 dBFS で音割れなし、無音や極端に長いものもなし。16「次に、学習後。」だけ
+  0.27 秒/字と少しゆっくり。文字起こしでの読みの確認はしていない（サーバーに faster-whisper が無い）
+- 最初は音割れ対策なしで作った（そのテイクは `work/narration/old_clipped/` に残してある）。対策を入れて作り直したので、
+  seed が変わり抑揚は別のテイクになっている（長さは同じ）
+- ユーザーはまだ作り直した後の音声を聞いていない
 
 ## わかったこと（ユーザーの感想）
 - v2 で声質は似てきたかもしれない（v1 の時点で似ていた可能性もある）
