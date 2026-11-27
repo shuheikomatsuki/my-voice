@@ -162,6 +162,24 @@ LoRA r16（diffusion_attn、学習するパラメータ 26.4M / 792M）、batch 
   会話調 5 文の長さ（本物＝1.00）: v3 は caption casual で 1.04（参照が朗読でも同じ）、caption normal で 1.10〜1.12、v2 は 1.30。2500〜5000 steps で耳での差はほぼない
 - **標準のモデルを v3-r16 checkpoint_0005000 に決定**（2026-11-27、本人が聞いて）。5000 steps より先は伸ばさない（2500 steps 以降は横ばい、最後の下がりは学習率を下げた効果）
 
+## 動画 第2弾のナレーションと聞き比べ用の音声（2026-11-27）
+- 文: `work/narration_part2/texts.tsv`（id・text_for_tts・subtitle、1 行目は見出し、31 文、タメ口の会話調）。合成は text_for_tts
+- 合成: `work/narration_part2/gen.py`（run.sh、tmux）。v3-r16 checkpoint_0005000、caption casual、参照音声は casual から自動選択
+  （11 文・30.6 秒、v3_listen の cas-cas と同じ）。音割れ対策は前回と同じ `[infer] peak_dbfs = -1.0`。合成 69 秒、最高 74℃・VRAM 5GB
+- チェック: `work/narration_part2/check.py`（faster-whisper large-v3、cuDNN は `work/casual/asr.env`）→ `check.tsv` と
+  `outputs/narration_part2/listen.md`。長さ・秒/字・ピーク・無音（qc）と、文字起こしと台本の一致度（0.8 未満を要確認）
+- 結果: 31 文・合計 126.2 秒（2 分 6 秒）。全部ピーク -1.0 dBFS で音割れなし、無音・極端な長さもなし、一致度は最低 0.83
+  （表記ゆれ程度）。作り直し: 21（「同じでジーピーユーで」と余計な「で」→ seed 11）、28（「モデルの音」が「モデルノート」
+  → seed 33）。23 は秒/字 0.18 と遅めだが、作り直しても長さが同じで「の」が抜けたので元のまま。
+  テイクは `work/narration_part2/takes/`（元のテイクは `takes/orig/`）、理由は `replaced.tsv` と listen.md
+- 聞き比べ用: `outputs/part2_samples/`（README.md に一覧）。新しい合成はなし、既存からコピー
+  - recap_v2.wav / refonly_v2_casualref.wav: v2 2000 steps の「いやー、昨日さ、なんか全然寝れなくてさ。」を
+    参照 朗読 / 参照 会話調で（`outputs/casual_ref/{read,casual}/t1.wav`、どちらも 3.68 秒）
+  - compare_{A,B,C}_{v2,v3,real}.wav: v3 の検証用の会話調 c022 / c477 / c312（v2 と本物の差が大きい 3 文）。
+    本物比 v2 1.40 / 1.53 / 1.29、v3 1.10 / 1.05 / 1.09
+- Mac へ: `rsync -av helen-home:/workH/kmt/prv/my-voice/outputs/narration_part2 helen-home:/workH/kmt/prv/my-voice/outputs/part2_samples ~/my-voice/outputs/`
+- ユーザーはまだ聞いていない
+
 ## 注意点
 - 生成音声には、ピークが 0 dBFS に当たるものがある（base でも同じ）。今のところ聞いて問題はないが、未対処
 - LoRA の出力は base より約 10〜15% 速くなり、本物の録音の長さに近い
