@@ -130,6 +130,10 @@ ref_exclude = [
     "EMOTION100_079_normal", "EMOTION100_081_normal", "EMOTION100_093_normal",
     "EMOTION100_095_normal", "EMOTION100_096_normal",
 ]
+# 合成音声のピークの上限（dBFS）。Irodori は波形をそのまま 16bit で保存するので、
+# 1.0 を超えた部分が音割れになる（2026-11-27、ナレーション 22 文すべてで数〜24 サンプル）。
+# これを超える音声だけ、保存前に全体の音量を下げる。上げることはしない
+peak_dbfs = -1.0
 # 学習中のチェックポイント比較で読ませるテスト文
 test_sentences = [
     "こんにちは。今日はいい天気ですね。",

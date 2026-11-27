@@ -277,6 +277,7 @@ def test_infer_batch_writes_one_job_per_sentence(project_root, monkeypatch, tmp_
     args = seen["args"]
     assert args[0].endswith("batch_infer.py") and Path(args[0]).is_file()
     assert "--ref-wavs" in args and "--model-device" in args and "--text" not in args
+    assert args[args.index("--peak-dbfs") + 1] == "-1.0"  # [infer] peak_dbfs
     assert seen["jobs"][0][:2] == ["--text", "一つ目。"] and "--lora-adapter" in seen["jobs"][0] and "cap" in seen["jobs"][0]
     assert seen["jobs"][1] == ["--text", "二つ目。", "--output-wav", str((tmp_path / "o" / "b.wav").resolve())]
     assert not list((p.work_dir / "tmp").glob("*.jsonl"))  # jobs ファイルは消す

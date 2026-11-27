@@ -297,13 +297,9 @@ def infer(
     extra: list[str] | None = None,
     dry_run: bool = False,
 ) -> Path:
-    device = device or default_device()
-    output.parent.mkdir(parents=True, exist_ok=True)
-    args = ["infer.py", *_infer_common_args(project, ref, device, precision)]
-    args += _infer_job_args(text, output, adapter, caption)
-    args += extra or []
-    run(project, args, dry_run=dry_run)
-    return output
+    return infer_batch(
+        project, [InferJob(text, output, adapter, caption)], ref=ref, device=device, precision=precision, extra=extra, dry_run=dry_run
+    )[0]
 
 
 @dataclass
@@ -326,7 +322,7 @@ def infer_batch(
     extra: list[str] | None = None,
     dry_run: bool = False,
 ) -> list[Path]:
-    """複数の文を、モデルを 1 回だけ読み込んで合成する（中身は infer.py と同じ処理）。
+    """複数の文を、モデルを 1 回だけ読み込んで合成する（中身は infer.py と同じ処理。infer() もこれを使う）。
 
     1 文ずつ infer() を呼ぶと毎回 約 20 秒かけてモデルを読み込み直すが、こちらは最初の 1 回だけ。
     参照音声・device・precision・extra は全文で共通。
@@ -342,6 +338,12 @@ def infer_batch(
         jobs_path = Path(f.name)
     try:
         args = [str(BATCH_SCRIPT.resolve()), "--jobs", str(jobs_path), *_infer_common_args(project, ref, device, precision)]
+        peak = project.section("infer").get("peak_dbfs")
+        if peak is not None:
+            args += ["--peak-dbfs", str(peak)]
+        if dry_run:
+            for j in jobs:
+                print("  job:", " ".join(shlex.quote(c) for c in _infer_job_args(j.text, j.output, j.adapter, j.caption)))
         run(project, args + (extra or []), dry_run=dry_run)
     finally:
         jobs_path.unlink(missing_ok=True)
