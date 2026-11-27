@@ -139,6 +139,26 @@ LoRA r16（diffusion_attn、学習するパラメータ 26.4M / 792M）、batch 
 - `qc --asr` をやり直した結果: **500 / 500 文、合計 17.7 分**、エラー 0、警告 101（99 件は話す速さの誤検知、
   一致度の警告は 468 の 1 件、先頭の無音 1.3 秒が 121 の 1 件）。表は `data/reports/qc_20261127_171449.tsv`
 
+## 参照音声だけを会話調にした v2 の合成（2026-11-27）
+- `work/casual_ref/gen.py` → `outputs/casual_ref/`（listen.md）。v2-r16 2000 steps、caption normal、参照音声＝朗読 / 会話調、10 文
+- 長さは参照音声を変えてもほぼ同じ（差 0.1 秒以内）。Irodori は文から長さを予測していて、v2 は朗読の長さしか学んでいない。
+  本物の会話調の録音より 1.3〜1.4 倍長い。ユーザーはこのあと聞く前に「やっぱり学習させたい」と決めた
+
+## v3 の学習（2026-11-27）
+- データ: `data/datasets/v3` = 924 文・43.3 分（朗読 424 文 caption normal + 会話調 500 文 caption casual）。
+  サーバーには phase1/2 の processed が無いので、`myvoice build` ではなく v2 と casual のデータセットをつなげて作った
+  （wav はハードリンク、stats.json に note あり）。検証用 92 文 / 学習 832 文（約 52 steps/epoch）
+- 戦略: base から学習し直し（v2 から続けない）、LoRA r16 diffusion_attn、5000 steps（≒96 epoch）、500 steps ごとに保存。
+  Irodori の LoRA 学習は duration predictor も丸ごと学習する（`irodori_tts/lora.py` の modules_to_save）ので、
+  caption casual で話す速さも変わることを期待している
+- 実行: `work/run_v3.sh`（tmux `v3`）。prepare 35 秒、学習 37 分 22 秒（17:34:14〜18:11:36）、約 2.3 steps/s
+- GPU の見張りは `work/gpu_guard.sh` に変えた: 87℃ が 30 秒続いたら SIGSTOP で一時停止 → 75℃ で SIGCONT 再開、
+  93℃ か一時停止 30 分で停止。runner は落ちたら最新チェックポイントから最大 2 回再開（OOM なら gradient checkpointing）。
+  今回は一度も働かなかった（最高 86℃、VRAM 最大 15.7GB）
+- 検証 loss: 100 → 0.760、500 → 0.730、1000 → 0.710、2000 → 0.709、2800 → 0.699、4400 → 0.698、**5000 → 0.692（最小）**。
+  2500 steps 以降は 0.70 前後でゆっくり下がり続け、過学習は見えない。dur_mae は 7 前後でほぼ一定
+- チェックポイント: `outputs/runs/v3-r16/checkpoint_0000500`〜`0005000` と final。聞き比べはまだ
+
 ## 注意点
 - 生成音声には、ピークが 0 dBFS に当たるものがある（base でも同じ）。今のところ聞いて問題はないが、未対処
 - LoRA の出力は base より約 10〜15% 速くなり、本物の録音の長さに近い
