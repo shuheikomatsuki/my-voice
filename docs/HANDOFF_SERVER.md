@@ -179,6 +179,11 @@ LoRA r16（diffusion_attn、学習するパラメータ 26.4M / 792M）、batch 
     本物比 v2 1.40 / 1.53 / 1.29、v3 1.10 / 1.05 / 1.09
 - Mac へ: `rsync -av helen-home:/workH/kmt/prv/my-voice/outputs/narration_part2 helen-home:/workH/kmt/prv/my-voice/outputs/part2_samples ~/my-voice/outputs/`
 - ユーザーはまだ聞いていない
+- **台本の修正（2026-11-28）**: ユーザーが Mac で texts.tsv を直し、05・06・07・15・17・19・20 の 7 文だけ同じ設定で合成し直した
+  （`gen.py 05 06 07 15 17 19 20`、run_rev1.sh）。直す前のテイクと check.tsv は `work/narration_part2/takes/before_rev1/`。
+  チェックは 31 文とも OK。17 だけ「前回のモデル**が**」と聞こえた（台本は「は」）ので seed 11 / 22 / 33 で作り直し、
+  「は」と読めた seed 11 を採用（文字起こしでは「テンポ」が「店舗」だが同じ読み。聞いて確認してもらう）。
+  合計は 126.2 → 131.0 秒（2 分 11 秒）。前回の 21・23・28 のテイクは `takes/round1/` に移した
 
 ## 注意点
 - 生成音声には、ピークが 0 dBFS に当たるものがある（base でも同じ）。今のところ聞いて問題はないが、未対処
